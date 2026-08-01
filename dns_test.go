@@ -2,9 +2,13 @@ package domainsec
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // errLookup is a sentinel used by fakeResolver to simulate lookup failures.
@@ -181,4 +185,27 @@ func TestTimeoutDial(t *testing.T) {
 	if _, err := timeoutDial(ctx, "udp", "192.0.2.1:53"); err == nil {
 		t.Fatal("expected dial error on cancelled context")
 	}
+}
+
+// TestDMARCPolicyMarshalsAsTheRawPolicyString names DMARCPolicy's claim. It is
+// a string type precisely so it serializes to JSON as the raw p= value — a
+// report is consumed by other tools, and a policy that marshalled as a number
+// or an object would silently break every consumer comparing it against
+// "reject". The three values below are the ones RFC 7489 defines.
+func TestDMARCPolicyMarshalsAsTheRawPolicyString(t *testing.T) {
+	t.Parallel()
+
+	for _, policy := range []DMARCPolicy{"none", "quarantine", "reject"} {
+		encoded, err := json.Marshal(policy)
+
+		require.NoError(t, err)
+		assert.JSONEq(t, `"`+string(policy)+`"`, string(encoded),
+			"a DMARC policy must marshal as its raw p= value")
+	}
+
+	// An unrecognised policy must round-trip verbatim too: this type reports
+	// what the domain actually published, not what it should have.
+	encoded, err := json.Marshal(DMARCPolicy("unexpected"))
+	require.NoError(t, err)
+	assert.JSONEq(t, `"unexpected"`, string(encoded))
 }

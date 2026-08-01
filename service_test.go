@@ -172,3 +172,29 @@ func TestMeetsSecurityFloor_RejectsNothing(t *testing.T) {
 	r := &DomainSecurityReport{}
 	assert.False(t, r.MeetsSecurityFloor())
 }
+
+// TestRawDomainIsNormalizedBeforeAnyLookupOrCacheKey names rawDomain's claim.
+// It is the type that says "this came from outside and has not been
+// normalized", and the normalization it awaits is what makes the cache correct:
+// DNS is case-insensitive, so "Example.COM" and "example.com" are one domain,
+// and keying the cache on the raw string would store a separate entry per
+// spelling — every variant paying a fresh set of DNS lookups while a populated
+// cache sat unused. Whitespace does the same, and a padded domain would also be
+// looked up verbatim.
+func TestRawDomainIsNormalizedBeforeAnyLookupOrCacheKey(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		raw  rawDomain
+		want Domain
+		why  string
+	}{
+		{raw: "example.com", want: "example.com", why: "an already-normal domain is unchanged"},
+		{raw: "Example.COM", want: "example.com", why: "DNS is case-insensitive"},
+		{raw: "  example.com  ", want: "example.com", why: "padding is not part of the name"},
+		{raw: "\tExample.Com\n", want: "example.com", why: "any whitespace, and case, together"},
+		{raw: "", want: "", why: "an empty domain normalizes to empty rather than to something"},
+	} {
+		assert.Equal(t, tc.want, normalizeDomain(tc.raw), "normalizeDomain(%q): %s", tc.raw, tc.why)
+	}
+}
